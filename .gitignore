@@ -12,7 +12,6 @@ env/
 # Data
 data/raw/*
 !data/raw/.gitkeep
-data/processed/*
 models/*
 !models/.gitkeep
 
