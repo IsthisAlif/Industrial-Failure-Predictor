@@ -22,39 +22,31 @@ if str(SRC_DIR) not in sys.path:
 from features import build_features
 
 # =====================================================
-# PAGE LAYOUT CONFIG
+# STREAMLIT CONFIG
 # =====================================================
 st.set_page_config(
-    page_title="Industrial Machine Health Dashboard",
+    page_title="Machine Health Dashboard",
     page_icon="🛠️",
     layout="wide"
 )
 
-# CUSTOM HEADER
-st.markdown(
+st.title("🛠️ Machine Health Dashboard")
+st.write(
     """
-    <style>
-        .big-title {
-            font-size: 40px !important;
-            font-weight: 700 !important;
-            margin-bottom: -10px !important;
-        }
-        .sub-title {
-            font-size: 18px !important;
-            color: #666;
-            margin-top: -10px !important;
-        }
-    </style>
-    <p class="big-title">🛠 Industrial Machine Health Dashboard</p>
-    <p class="sub-title">AI-powered Remaining Useful Life (RUL) prediction for turbofan engines</p>
-    """,
-    unsafe_allow_html=True,
+This dashboard estimates **how much life is left** in each engine based on its sensor data.
+
+It is designed to be **simple, clear, and easy to understand**:
+
+- Each row represents **one engine**  
+- The app estimates **remaining life (in cycles)**  
+- Engines are classified into **green, yellow, and red** based on health  
+"""
 )
 
-st.write("")
+st.markdown("---")
 
 # =====================================================
-# LOAD MODEL ARTIFACTS
+# LOAD MODEL
 # =====================================================
 preproc_path = MODELS_DIR / "preproc.joblib"
 model_path = MODELS_DIR / "xgb_rul_fd001.json"
@@ -62,7 +54,7 @@ model_path = MODELS_DIR / "xgb_rul_fd001.json"
 if not preproc_path.exists() or not model_path.exists():
     st.error(
         "Model files not found.\n"
-        "Train your model first:\n\n"
+        "Please train the model first:\n\n"
         "`cd src`\n`python train_fe.py`"
     )
     st.stop()
@@ -75,43 +67,47 @@ model = xgb.Booster()
 model.load_model(str(model_path))
 
 # =====================================================
-# SECTION 1 — DATA INPUT PANEL
+# 1) DATA INPUT
 # =====================================================
-st.markdown("## 1. Data Input")
+st.header("1. Upload Engine Data")
 
-st.info(
-    "Upload engine sensor data to analyse machine health. "
-    "If no file is uploaded, the dashboard uses a built-in example dataset."
+st.write(
+    """
+Upload engine sensor data in CSV or TXT format.  
+If no file is uploaded, the dashboard uses a built-in example dataset.
+"""
 )
 
-uploaded = st.file_uploader("Upload engine data file", type=["csv", "txt"])
+uploaded = st.file_uploader("Upload a sensor data file", type=["csv", "txt"])
 
 if uploaded:
     df = pd.read_csv(uploaded, sep=r"\s+|,", engine="python", header=None)
+    st.success("File uploaded successfully.")
 else:
-    sample_path = DATA_DIR / "test_FD001.txt"
-    df = pd.read_csv(sample_path, sep=r"\s+", header=None)
-    st.warning("Using sample dataset (test_FD001.txt)")
+    example_path = DATA_DIR / "test_FD001.txt"
+    df = pd.read_csv(example_path, sep=r"\s+", header=None)
+    st.info("Using example dataset (test_FD001.txt).")
 
+# Assign column names
 cols = ["unit", "cycle"] + [f"op{i}" for i in range(1, 4)] + [f"s{i}" for i in range(1, 22)]
 df.columns = cols[:df.shape[1]]
 
-with st.expander("📄 View Raw Data"):
-    st.dataframe(df.head(50), height=300)
+with st.expander("Show raw data"):
+    st.dataframe(df.head(50), height=250, use_container_width=True)
 
 # =====================================================
-# SECTION 2 — FEATURE GENERATION & PREDICTION
+# 2) PREDICT REMAINING LIFE
 # =====================================================
-st.markdown("## 2. Machine Health Prediction")
+st.header("2. Remaining Life Prediction")
 
-with st.spinner("Processing sensor data..."):
+with st.spinner("Analysing data..."):
     df_feat = build_features(df)
 
     valid_cols = [c for c in feature_cols if c in df_feat.columns]
     X = scaler.transform(df_feat[valid_cols])
     df_feat["RUL_pred"] = model.predict(xgb.DMatrix(X))
 
-# Latest cycle per engine
+# Take the latest cycle per engine
 latest = df_feat.groupby("unit")["cycle"].idxmax()
 summary = df_feat.loc[latest, ["unit", "cycle", "RUL_pred"]].sort_values("RUL_pred")
 
@@ -121,88 +117,88 @@ summary["risk"] = pd.cut(
     labels=["🔴 CRITICAL", "🟠 WARNING", "🟢 HEALTHY"]
 )
 
-# =====================================================
-# SECTION 3 — KPI CARDS (INDUSTRY LOOK)
-# =====================================================
-st.markdown("## 3. Fleet-Level Machine Health Overview")
-
-critical = (summary["risk"] == "🔴 CRITICAL").sum()
-warning = (summary["risk"] == "🟠 WARNING").sum()
-healthy = (summary["risk"] == "🟢 HEALTHY").sum()
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric("🔴 Critical Machines", critical)
-col2.metric("🟠 Machines to Monitor", warning)
-col3.metric("🟢 Healthy Machines", healthy)
-
-st.write("")
-st.dataframe(
-    summary.rename(
-        columns={
-            "unit": "Engine ID",
-            "cycle": "Last Observed Cycle",
-            "RUL_pred": "Estimated Remaining Life (cycles)",
-            "risk": "Risk State"
-        }
-    ),
-    use_container_width=True,
-    height=350
+# Human-friendly names
+display = summary.rename(
+    columns={
+        "unit": "Engine ID",
+        "cycle": "Last Recorded Cycle",
+        "RUL_pred": "Estimated Remaining Life (cycles)",
+        "risk": "Health Status"
+    }
 )
 
+st.write(
+    """
+The table below shows the **latest health estimate** for each engine:
+
+- **Remaining Life (cycles)** = how long the engine may run before failing  
+- **Health Status** = color-coded risk level  
+"""
+)
+
+st.dataframe(display, height=300, use_container_width=True)
+
 # =====================================================
-# SECTION 4 — ENGINE-LEVEL ANALYSIS
+# 3) ENGINE-LEVEL VIEW
 # =====================================================
-st.markdown("## 4. Engine-Level Analysis")
+st.header("3. Inspect a Specific Engine")
 
-engine_ids = summary["unit"].tolist()
-selected_engine = st.selectbox("Select an engine to inspect:", engine_ids)
+engine_list = display["Engine ID"].tolist()
+chosen_engine = st.selectbox("Select an engine:", engine_list)
 
-engine_df = df_feat[df_feat["unit"] == selected_engine].sort_values("cycle")
+engine_df = df_feat[df_feat["unit"] == chosen_engine].sort_values("cycle")
 
-st.markdown("### Remaining Life Prediction Over Time")
+st.write("### Remaining Life Over Time")
 st.line_chart(
     engine_df.set_index("cycle")[["RUL_pred"]].rename(
         columns={"RUL_pred": "Estimated Remaining Life"}
     )
 )
 
-# sensor selection
-all_sensors = [c for c in df.columns if c.startswith("s")]
+available_sensors = [c for c in df.columns if c.startswith("s")]
 default_sensors = ["s2", "s3", "s4"]
 
-picked_sensors = st.multiselect(
-    "Select sensors to visualize",
-    options=all_sensors,
-    default=[s for s in default_sensors if s in all_sensors]
+picked = st.multiselect(
+    "Show sensor trends:",
+    options=available_sensors,
+    default=[s for s in default_sensors if s in available_sensors]
 )
 
-if picked_sensors:
-    st.markdown("### Sensor Behaviour Over Time")
-    st.line_chart(engine_df.set_index("cycle")[picked_sensors])
+if picked:
+    st.write("### Sensor Trends")
+    st.line_chart(engine_df.set_index("cycle")[picked])
 
 # =====================================================
-# SECTION 5 — DOWNLOAD REPORT
+# 4) DOWNLOAD SUMMARY
 # =====================================================
-st.markdown("## 5. Export Report")
+st.header("4. Download Summary Report")
+
 st.download_button(
-    label="📥 Download Engine Summary (CSV)",
-    data=summary.to_csv(index=False),
-    file_name="engine_health_report.csv",
+    "📥 Download Engine Summary (CSV)",
+    data=display.to_csv(index=False),
+    file_name="engine_summary.csv",
     mime="text/csv"
 )
 
 # =====================================================
-# SECTION 6 — TECHNICAL (OPTIONAL) MODEL ACCURACY
+# 5) OPTIONAL: TECHNICAL MODEL ACCURACY
 # =====================================================
-st.markdown("## 6. Model Accuracy (Technical Section)")
+st.header("5. Technical: Model Accuracy (Optional)")
+
+st.write(
+    """
+This section shows how accurate the model is using a separate test dataset  
+that includes **true actual values** of remaining engine life.
+"""
+)
 
 results_path = MODELS_DIR / "test_results_fd001.csv"
 
 if not results_path.exists():
     st.info(
-        "`test_results_fd001.csv` not found.\n"
-        "Generate it first:\n\n`cd src`\n`python test_evaluate.py`"
+        "Test evaluation file not found.\n"
+        "To generate it:\n\n"
+        "`cd src`\n`python test_evaluate.py`"
     )
 else:
     test_res = pd.read_csv(results_path)
@@ -213,16 +209,16 @@ else:
     rmse = np.sqrt(((y_true - y_pred) ** 2).mean())
     mae = np.mean(np.abs(y_true - y_pred))
 
-    st.metric("Model RMSE", f"{rmse:.2f} cycles")
-    st.metric("Model MAE", f"{mae:.2f} cycles")
+    st.write(f"**Average Error (RMSE):** {rmse:.2f} cycles")
+    st.write(f"**Average Absolute Error (MAE):** {mae:.2f} cycles")
 
     fig, ax = plt.subplots()
-    ax.scatter(y_true, y_pred, alpha=0.7)
+    ax.scatter(y_true, y_pred)
     ax.plot([0, max(y_true)], [0, max(y_true)], "r--")
-    ax.set_xlabel("True RUL (cycles)")
-    ax.set_ylabel("Predicted RUL (cycles)")
-    ax.set_title("Predicted vs True RUL (Test Set)")
+    ax.set_xlabel("True Remaining Life")
+    ax.set_ylabel("Predicted Remaining Life")
+    ax.set_title("Predicted vs True Remaining Life")
     ax.grid(True)
     st.pyplot(fig)
 
-st.caption("AI-powered predictive maintenance demo — built with Python, Streamlit & XGBoost.")
+st.caption("Simple, clear, and practical machine health dashboard. Built with Streamlit.")
