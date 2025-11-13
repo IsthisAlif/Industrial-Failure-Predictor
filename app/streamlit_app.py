@@ -320,3 +320,4 @@ is within roughly **{mae:.0f}–{rmse:.0f} cycles** of the true value.
 
 st.markdown("---")
 st.caption("Built as a learning and portfolio project – combining machine learning with a practical maintenance use case.")
+st.caption("Combining machine learning with a practical maintenance use case.")
