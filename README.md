@@ -14,6 +14,12 @@ By visualizing how an engine’s condition changes over time and predicting how 
 
 ---
 
+## Streamlit link
+
+https://industrialfailurepredictor.streamlit.app/
+
+---
+
 ## 🚀 Project Overview
 
 This repository trains and serves machine‑learning models that estimate the **Remaining Useful Life (RUL)** for industrial equipment from time‑stamped sensor readings. It provides:
