@@ -5,6 +5,8 @@ import pandas as pd
 import joblib
 import xgboost as xgb
 import streamlit as st
+import numpy as np
+import matplotlib.pyplot as plt
 
 # --- Resolve project paths ---
 APP_DIR = Path(__file__).resolve().parent
@@ -134,3 +136,52 @@ picked = st.multiselect(
 )
 if picked:
     st.line_chart(u.set_index("cycle")[picked])
+
+# --- Test evaluation section  ---
+st.subheader("5) Test Evaluation (FD001)")
+
+test_results_path = MODELS_DIR / "test_results_fd001.csv"
+
+if not test_results_path.exists():
+    st.info(
+        "Test evaluation file not found.\n\n"
+        "Run this once in your terminal to generate it:\n"
+        "  cd src\n"
+        "  python test_evaluate.py"
+    )
+else:
+    # Load test results produced by src/test_evaluate.py
+    test_res = pd.read_csv(test_results_path)
+
+    # Expecting columns: unit, RUL_pred, RUL_true, RUL_pred_adjusted
+    if {"RUL_true", "RUL_pred_adjusted"}.issubset(test_res.columns):
+        y_true = test_res["RUL_true"].values
+        y_pred = test_res["RUL_pred_adjusted"].values
+
+        rmse = np.sqrt(((y_true - y_pred) ** 2).mean())
+        mae = np.abs(y_true - y_pred).mean()
+
+        st.markdown(f"**Test RMSE:** {rmse:.2f} &nbsp;&nbsp; **Test MAE:** {mae:.2f}")
+
+        # Show a small table of first few engines
+        st.markdown("**Sample of test engines (true vs predicted RUL):**")
+        st.dataframe(test_res.head(10))
+
+        # Scatter plot: Predicted vs True
+        fig, ax = plt.subplots()
+        ax.scatter(y_true, y_pred, alpha=0.7)
+        min_val = min(y_true.min(), y_pred.min())
+        max_val = max(y_true.max(), y_pred.max())
+        ax.plot([min_val, max_val], [min_val, max_val], "r--", label="Ideal (y = x)")
+        ax.set_xlabel("True RUL")
+        ax.set_ylabel("Predicted RUL (adjusted)")
+        ax.set_title("Predicted vs True RUL on Test FD001")
+        ax.legend()
+        ax.grid(True)
+
+        st.pyplot(fig)
+    else:
+        st.warning(
+            "The test_results_fd001.csv file does not have the expected columns.\n"
+            "Re-run: python src/test_evaluate.py"
+        )
